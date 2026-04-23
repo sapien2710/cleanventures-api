@@ -80,13 +80,36 @@ export async function chatRoutes(app: FastifyInstance) {
   });
 
   // POST /chat/channel/:channelId/members — add a user to a channel when they join a venture
+  // Body: { target_user_id?: string } — if provided, adds that specific user (owner approving someone);
+  // otherwise adds the caller (self-join after being approved).
   app.post("/chat/channel/:channelId/members", { preHandler: requireAuth }, async (request, reply) => {
-    const userId = (request as any).userId as string;
+    const callerId = (request as any).userId as string;
     const { channelId } = request.params as { channelId: string };
+    const body = (request.body ?? {}) as { target_user_id?: string };
+
+    // Allow owner to add a specific user (by their Supabase UUID) to the channel
+    const userIdToAdd = body.target_user_id ?? callerId;
 
     try {
+      // If adding a different user, ensure they exist in Stream first
+      if (userIdToAdd !== callerId) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("id, username, full_name, avatar_url")
+          .eq("id", userIdToAdd)
+          .maybeSingle();
+
+        if (profile) {
+          await streamClient.upsertUser({
+            id: profile.id,
+            name: profile.full_name ?? profile.username,
+            image: profile.avatar_url ?? undefined,
+          });
+        }
+      }
+
       const channel = streamClient.channel("messaging", channelId);
-      await channel.addMembers([userId]);
+      await channel.addMembers([userIdToAdd]);
       return reply.send({ success: true });
     } catch (err: any) {
       app.log.error(err);
