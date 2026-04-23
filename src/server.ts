@@ -1,12 +1,14 @@
 import "dotenv/config";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
+import multipart from "@fastify/multipart";
 
 import { authRoutes } from "./routes/auth";
 import { ventureRoutes } from "./routes/ventures";
 import { taskRoutes } from "./routes/tasks";
 import { notificationRoutes } from "./routes/notifications";
 import { chatRoutes } from "./routes/chat";
+import { uploadRoutes } from "./routes/upload";
 
 const app = Fastify({
   logger: {
@@ -25,6 +27,9 @@ app.register(cors, {
   allowedHeaders: ["Content-Type", "Authorization"],
 });
 
+// Multipart support for file uploads (10 MB limit)
+app.register(multipart, { limits: { fileSize: 10 * 1024 * 1024 } });
+
 // Health check
 app.get("/health", async () => ({ status: "ok", timestamp: new Date().toISOString() }));
 
@@ -34,6 +39,7 @@ app.register(ventureRoutes);
 app.register(taskRoutes);
 app.register(notificationRoutes);
 app.register(chatRoutes);
+app.register(uploadRoutes);
 
 // Start server
 const PORT = Number(process.env.PORT ?? 3000);
