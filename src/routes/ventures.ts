@@ -221,6 +221,53 @@ export async function ventureRoutes(app: FastifyInstance) {
     return reply.status(201).send({ message: "Joined successfully" });
   });
 
+  // POST /ventures/:id/approve-member — owner/co-organiser approves a join request for a specific user
+  app.post("/ventures/:id/approve-member", { preHandler: requireAuth }, async (request, reply) => {
+    const callerId = (request as AuthRequest).userId;
+    const { id } = request.params as { id: string };
+    const { target_user_id, role } = request.body as { target_user_id: string; role?: string };
+
+    if (!target_user_id) return reply.status(400).send({ error: "target_user_id is required" });
+
+    // Verify caller is owner or co-organiser
+    const { data: membership } = await supabase
+      .from("venture_members")
+      .select("role")
+      .eq("venture_id", id)
+      .eq("user_id", callerId)
+      .maybeSingle();
+
+    if (!membership || !["owner", "co-organiser"].includes(membership.role)) {
+      return reply.status(403).send({ error: "Only the owner or co-organiser can approve members" });
+    }
+
+    // Check if target user is already a member
+    const { data: existing } = await supabase
+      .from("venture_members")
+      .select("user_id")
+      .eq("venture_id", id)
+      .eq("user_id", target_user_id)
+      .maybeSingle();
+
+    if (existing) return reply.status(409).send({ error: "User is already a member" });
+
+    // Insert the approved member
+    await supabase.from("venture_members").insert({
+      venture_id: id,
+      user_id: target_user_id,
+      role: role ?? "volunteer",
+    });
+
+    await supabase.from("activity_events").insert({
+      venture_id: id,
+      user_id: callerId,
+      type: "member_joined",
+      payload: { approved_user_id: target_user_id },
+    });
+
+    return reply.status(201).send({ message: "Member approved" });
+  });
+
   // DELETE /ventures/:id/leave
   app.delete("/ventures/:id/leave", { preHandler: requireAuth }, async (request, reply) => {
     const userId = (request as AuthRequest).userId;
