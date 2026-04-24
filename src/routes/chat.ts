@@ -30,14 +30,15 @@ export async function chatRoutes(app: FastifyInstance) {
       return reply.status(404).send({ error: "Profile not found" });
     }
 
-    // Upsert the user in Stream so their name/image is up to date
-    await streamClient.upsertUser({
+    // Generate token immediately (synchronous, no API call needed)
+    const token = streamClient.createToken(userId);
+
+    // Upsert user in Stream in the background (fire-and-forget) to keep name/avatar in sync
+    streamClient.upsertUser({
       id: userId,
       name: profile.full_name ?? profile.username,
       image: profile.avatar_url ?? undefined,
-    });
-
-    const token = streamClient.createToken(userId);
+    }).catch((err: any) => app.log.warn('[Stream] upsertUser failed:', err?.message));
 
     return reply.send({
       token,
